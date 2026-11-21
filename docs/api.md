@@ -194,32 +194,45 @@ curl -s 'http://localhost:8080/api/v1/scan?asset=USDZ-GAKTLPC4ZV37SSCITQ5IS5AQ4W
 To check every trustline an account holds at once, use the
 exposure endpoint (`GET /api/v1/exposure`, below).
 
-### `GET /api/v1/history?asset=CODE-ISSUER`
+### `GET /api/v1/history?asset=CODE-ISSUER&limit=100&before=...`
 
-Returns an asset's recorded observations in time order, oldest first, with
-the transitions derived between each consecutive pair. It reads only what
-scans have recorded; it never scans. The full semantics — retention, what an
-empty history means, and why an undetermined observation is returned marked
-rather than dropped — are in [history.md](history.md).
+Returns one bounded page of an asset's recorded observations in time order,
+oldest first, with the transitions derived between each consecutive pair. It
+reads only what scans have recorded; it never scans. The full semantics —
+pagination, both retention bounds, what an empty history means, and why an
+undetermined observation is returned marked rather than dropped — are in
+[history.md](history.md).
 
 Parameters:
 
 - `asset` (required): asset code and issuer.
+- `limit` (optional): page size, default **100**, maximum **256**.
+- `before` (optional): exclusive cursor; returns observations strictly older
+  than this RFC 3339 timestamp. Send the previous response's `next_before`
+  back as `before` to walk the history.
 
 Response:
 
 - `asset`, `state` (`valid`, `unknown`, or `missing` — the completeness of
   the history, not of the request), a plain-language `reason` whenever the
-  state is not `valid`, `count`, `observations[]`, `transitions[]`,
-  `latest_at` and `latest_age_secs` (so a consumer applies its own staleness
-  policy), and `retention` (the per-asset cap the results were read against).
+  state is not `valid`, `count` (observations on this page),
+  `observations[]`, `transitions[]` (including the transition into the page
+  from its predecessor, so a change at a page boundary is still reported),
+  `limit` (the page size applied), `next_before` (absent on the last page),
+  `latest_at` and `latest_age_secs` (the most recent observation overall, so a
+  consumer applies its own staleness policy), `retention` (the per-asset cap)
+  and `max_assets` (the global cap on assets the store retains).
 
 Status codes:
 
-- `200 OK`: history returned — including an empty one. An asset with no
-  observations is a successful result with `state: "missing"`, never a 404:
-  "we have never looked" and "the request failed" are different answers.
-- `400 Bad Request`: missing or invalid asset, or the network's native asset.
+- `200 OK`: a page of history returned — including an empty or empty-history
+  one. An asset with no observations is a successful result with
+  `state: "missing"`, never a 404: "we have never looked" and "the request
+  failed" are different answers. A page past the oldest retained observation
+  is an empty page with `state: "valid"`, not an error.
+- `400 Bad Request`: missing or invalid asset, the network's native asset, a
+  `limit` outside 1-256 (or not an integer), or a `before` that is not an
+  RFC 3339 timestamp.
 
 ### `GET /api/v1/exposure?account=G...&limit=10&cursor=0`
 
